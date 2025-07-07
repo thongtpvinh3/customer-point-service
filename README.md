@@ -50,8 +50,27 @@ Client/Another Service ---event point----->  CustomerPointService ----Tính toá
         * Giao dịch lặp (Sử dụng Idempotency Key hoặc transaction id duy nhất)
         * Chuyển điểm phải đảm bảo tính hợp lệ của dữ liệu
         * Các giao dịch phải được thực hiện đồng thời
-        * DeadLock nếu A và B chuyển đồng thời
+        * DeadLock nếu A và B chuyển đồng thời cho C
   ```
+* `Pessimistic Locking` : Cơ chế này hoạt động bằng cách lock 1 row trước khi attr của nó được thay đổi thông qua việc gọi method setAttr()
+  * Nếu có transaction nào khác cố gắng truy cập vào row đã bị khóa đó, chúng sẽ buộc phải chờ cho đến khi transaction đầu tiên hoàn thành
+  * Sử dụng syntax SELECT ... FOR UPDATE
+  * 2 Transaction không bao giờ có thể cùng thay đổi 1 row
+  * về cơ bản toàn bộ quá trình update diễn ra như sau:
+    ```
+      Acquire lock.
+      Update data.
+      Release lock.
+    ```
+
+  * Nhược điểm:
+    * Nếu 1 user chọn edit 1 record, sau đó, anh ra đi mà chưa kết thúc hay hủy bỏ transaction này --> Tất cả các user cần update record này sẽ phải
+    buộc đợi cho đến khi row này được mở Locking
+    * Có thể xảy ra DeadLock. Khi User A và B cùng update vào Database trong cùng một thời gian, User A sẽ khóa lại record đó và cố gắng mở khóa được
+    được hình thành bởi User B cũng đang đợi mở khóa và User A vừa hình thành
+  
+* `Optimistic Locking`: Chỉ lock khi commit việc update.
+
 
 ## 4. Những lỗi sẽ có thể mắc phải khi lượng giao dịch lớn
 

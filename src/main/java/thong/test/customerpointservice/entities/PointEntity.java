@@ -18,5 +18,8 @@ public class PointEntity {
     @Column(nullable = false, name = "current_point")
     private Long currentPoint;
 
+    @Version
+    private Long version;
+
 }
 
