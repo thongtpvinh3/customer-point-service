@@ -6,7 +6,7 @@ import lombok.Data;
 @Data
 @Entity
 @Table(name = "user_bonus_point")
-public class UserBonusPointEntity  {
+public class PointEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

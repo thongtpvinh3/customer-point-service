@@ -6,16 +6,16 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import thong.test.customerpointservice.entities.UserBonusPointEntity;
+import thong.test.customerpointservice.entities.PointEntity;
 
 import java.util.List;
 
 @Repository
-public interface UserBonusPointRepository extends JpaRepository<UserBonusPointEntity, Long> {
+public interface PointRepository extends JpaRepository<PointEntity, Long> {
 
-    UserBonusPointEntity findByUserId(long userId);
+    PointEntity findByUserId(long userId);
 
-    @Query("SELECT u FROM UserBonusPointEntity u WHERE u.userId IN :ids")
+    @Query("SELECT u FROM PointEntity u WHERE u.userId IN :ids")
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<UserBonusPointEntity> findByIdsForUpdate(@Param("ids") List<Long> ids);
+    List<PointEntity> findByIdsForUpdate(@Param("ids") List<Long> ids);
 }

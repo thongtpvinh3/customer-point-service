@@ -5,18 +5,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import thong.test.customerpointservice.entities.TransactionLogEntity;
-import thong.test.customerpointservice.entities.UserBonusPointEntity;
+import thong.test.customerpointservice.entities.PointEntity;
+import thong.test.customerpointservice.infrastructure.RedisLockService;
 import thong.test.customerpointservice.pojo.CreateUserPointRequest;
 import thong.test.customerpointservice.pojo.ModifyPointEventRecord;
 import thong.test.customerpointservice.pojo.dto.TransferPointMetaData;
 import thong.test.customerpointservice.repository.TransactionLogRepository;
-import thong.test.customerpointservice.repository.UserBonusPointRepository;
+import thong.test.customerpointservice.repository.PointRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 @Service
@@ -24,22 +24,23 @@ import java.util.stream.Stream;
 @Slf4j
 public class UserPointService {
 
-    private final UserBonusPointRepository userBonusPointRepository;
+    private final PointRepository pointRepository;
 
     private final TransactionLogRepository transactionLogRepository;
+    private final RedisLockService redisLockService;
 
     @Transactional(readOnly = true)
-    public UserBonusPointEntity  findByUserId(Long userId) {
-        return userBonusPointRepository.findByUserId(userId);
+    public PointEntity findByUserId(Long userId) {
+        return pointRepository.findByUserId(userId);
     }
 
     @Transactional
-    public UserBonusPointEntity save(CreateUserPointRequest request) {
-        var userBonusPointEntity = new UserBonusPointEntity();
+    public PointEntity save(CreateUserPointRequest request) {
+        var userBonusPointEntity = new PointEntity();
         userBonusPointEntity.setUserId(request.getUserId());
         userBonusPointEntity.setCurrentPoint(request.getCurrentPoint());
         try {
-            return userBonusPointRepository.save(userBonusPointEntity);
+            return pointRepository.save(userBonusPointEntity);
         } catch (Exception e) {
             log.error(e.getMessage());
         }
@@ -63,48 +64,57 @@ public class UserPointService {
             return;
         }
 
-        if (transactionLogRepository.existsByTransactionId(txnId)) {
-            log.info("Transaction {} already processed, skipping", txnId);
-            return;
+        List<Long> sortedIds = Stream.of(senderId, receiverId).sorted().toList();
+
+        String lockKeySender = "lock:user:" + sortedIds.get(0);
+        String lockKeyReceiver = "lock:user:" + sortedIds.get(1);
+        String lockValue = UUID.randomUUID().toString();
+
+        boolean locked = false;
+
+        try {
+            boolean lockedSender = redisLockService.tryLock(lockKeySender, lockValue, 5L, TimeUnit.SECONDS);
+            boolean lockedReceiver = redisLockService.tryLock(lockKeyReceiver, lockValue, 5L, TimeUnit.SECONDS);
+
+            locked = lockedSender && lockedReceiver;
+
+            if (!locked) {
+                log.warn("Could not acquire lock for users {}, {}", senderId, receiverId);
+                return;
+            }
+            PointEntity sender = pointRepository.findByUserId(senderId);
+            PointEntity receiver = pointRepository.findByUserId(receiverId);
+
+            if (sender.getCurrentPoint() < amount) {
+                log.error("Sender does not have enough points.");
+                return;
+            }
+
+            sender.setCurrentPoint(sender.getCurrentPoint() - amount);
+            receiver.setCurrentPoint(receiver.getCurrentPoint() + amount);
+
+            pointRepository.saveAll(List.of(sender, receiver));
+
+            var transactionLog = TransactionLogEntity.builder()
+                    .transactionId(txnId)
+                    .senderId(senderId)
+                    .receiverId(receiverId)
+                    .amount(amount)
+                    .status("SUCCESS")
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            transactionLogRepository.save(transactionLog);
+
+            log.info("Transferred {} points from {} to {}", amount, senderId, receiverId);
+
+        } catch (Exception e) {
+            Thread.currentThread().interrupt();
+            log.error(e.getMessage());
+        } finally {
+            redisLockService.unlock(lockKeySender, lockValue);
+            redisLockService.unlock(lockKeyReceiver, lockValue);
         }
-
-        List<Long> orderedIds = Stream.of(senderId, receiverId)
-                .sorted()
-                .toList();
-
-        Map<Long, UserBonusPointEntity> lockedUsers = userBonusPointRepository
-                .findByIdsForUpdate(orderedIds).stream()
-                .collect(Collectors.toMap(
-                        UserBonusPointEntity::getUserId,
-                        Function.identity()
-                ));
-
-        UserBonusPointEntity sender = lockedUsers.get(senderId);
-        UserBonusPointEntity receiver = lockedUsers.get(receiverId);
-
-        if (sender.getCurrentPoint() < amount) {
-            log.error("Sender does not have enough points.");
-            return;
-        }
-
-        sender.setCurrentPoint(sender.getCurrentPoint() - amount);
-        receiver.setCurrentPoint(receiver.getCurrentPoint() + amount);
-
-        userBonusPointRepository.saveAll(List.of(sender, receiver));
-
-        var transactionLog = TransactionLogEntity.builder()
-                .transactionId(txnId)
-                .senderId(senderId)
-                .receiverId(receiverId)
-                .amount(amount)
-                .status("SUCCESS")
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        transactionLogRepository.save(transactionLog);
-
-        log.info("Transferred {} points from {} to {}", amount, senderId, receiverId);
-
     }
 
 }
