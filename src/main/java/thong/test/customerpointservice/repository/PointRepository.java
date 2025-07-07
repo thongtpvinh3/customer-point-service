@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import thong.test.customerpointservice.entities.PointEntity;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface PointRepository extends JpaRepository<PointEntity, Long> {
@@ -18,4 +19,9 @@ public interface PointRepository extends JpaRepository<PointEntity, Long> {
     @Query("SELECT u FROM PointEntity u WHERE u.userId IN :ids")
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<PointEntity> findByIdsForUpdate(@Param("ids") List<Long> ids);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM PointEntity p WHERE p.userId = :userId")
+    Optional<PointEntity> findByUserIdWithPessimisticLock(@Param("userId") Long userId);
+
 }
