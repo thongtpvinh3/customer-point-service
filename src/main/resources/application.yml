@@ -3,7 +3,7 @@ spring:
     name: customer-point-service
   datasource:
     url: ${DATASOURCE_URL:jdbc:postgresql://localhost:5432/dev-customer-point}
-    username: ${DATASOURCE_USERNAME:thong}
+    username: ${DATASOURCE_USERNAME:username1}
     password: ${DATASOURCE_PASSWORD:123456}
     driver-class-name: org.postgresql.Driver
   jpa:
