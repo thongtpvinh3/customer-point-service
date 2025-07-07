@@ -27,4 +27,4 @@ spring:
 
 service:
   kafka:
-    modify-point-topic: com.thong.modify-point-topic
+    modify-point-topic: com.thong1.modify-point-topic

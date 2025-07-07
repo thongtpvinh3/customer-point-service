@@ -25,11 +25,12 @@ public class UserPointService {
     private final PointRepository pointRepository;
 
     private final TransactionLogRepository transactionLogRepository;
+
     private final RedisLockService redisLockService;
 
     @Transactional(readOnly = true)
     public PointEntity findByUserId(Long userId) {
-        return pointRepository.findByUserId(userId);
+        return pointRepository.findByUserId(userId).orElse(null);
     }
 
     @Transactional
@@ -52,59 +53,53 @@ public class UserPointService {
         Long receiverId = event.getEventMetaData().getReceiverUserId();
         int amount = event.getEventMetaData().getTransferredAmount();
 
-        // 1. Validate input
         validateTransferRequest(txnId, senderId, receiverId, amount);
 
-        // 2. Check if transaction already processed
         if (isTransactionProcessed(txnId)) {
             log.warn("Transaction {} was already processed", txnId);
             return;
         }
 
-        String lockKey1 = String.valueOf(Math.min(senderId, receiverId));
-        String lockKey2 = String.valueOf(Math.max(senderId, receiverId));
+        String lockKey1 = "user_point:" + Math.min(senderId, receiverId);
+        String lockKey2 = "user_point:" + Math.max(senderId, receiverId);
+
+        TransactionLogEntity transactionLog = createTransactionLog(txnId, senderId, receiverId, amount);
+        transactionLogRepository.save(transactionLog);
 
         try {
-            // Acquire locks in order
-            boolean senderLockAcquired = redisLockService.tryAcquireLock("user_point:" + lockKey1, txnId + "-1", 5L, TimeUnit.SECONDS);
+            boolean senderLockAcquired = redisLockService.tryLockWithRetry(lockKey1, txnId, 10L, TimeUnit.SECONDS, 5, 100);
 
             if (!senderLockAcquired) {
+                transactionLog.setStatus("FAILED");
                 throw new RuntimeException("Could not acquire lock for sender account");
             }
 
-            boolean receiverLockAcquired = redisLockService.tryAcquireLock("user_point:" + lockKey2, txnId + "-2", 5L, TimeUnit.SECONDS);
+            boolean receiverLockAcquired = redisLockService.tryLockWithRetry(lockKey2, txnId, 10L, TimeUnit.SECONDS, 5, 100);
 
             if (!receiverLockAcquired) {
+                transactionLog.setStatus("FAILED");
                 throw new RuntimeException("Could not acquire lock for receiver account");
             }
 
-            // 4. Get latest account states
-            PointEntity sender = pointRepository.findByUserIdWithPessimisticLock(senderId)
+            PointEntity sender = pointRepository.findByUserId(senderId)
                     .orElseThrow(() -> new RuntimeException("Sender account not found"));
 
-            PointEntity receiver = pointRepository.findByUserIdWithPessimisticLock(receiverId)
+            PointEntity receiver = pointRepository.findByUserId(receiverId)
                     .orElseThrow(() -> new RuntimeException("Receiver account not found"));
 
-            // 5. Validate balance
             if (sender.getCurrentPoint() < amount) {
-                throw new RuntimeException("Insufficient points: " + sender.getCurrentPoint());
+                transactionLog.setStatus("FAILED");
+                throw new RuntimeException("User " + sender.getUserId() + " Don't have enough point: " + sender.getCurrentPoint());
             }
 
-            // 6. Perform transfer
             try {
-                // Create transaction log first with PENDING status
-                TransactionLogEntity transactionLog = createTransactionLog(txnId, senderId, receiverId, amount, "PENDING");
-                transactionLogRepository.save(transactionLog);
-
-                // Update points
                 sender.setCurrentPoint(sender.getCurrentPoint() - amount);
                 receiver.setCurrentPoint(receiver.getCurrentPoint() + amount);
 
-                // Save both entities
                 pointRepository.saveAll(List.of(sender, receiver));
 
-                // Update transaction status to SUCCESS
                 transactionLog.setStatus("SUCCESS");
+
                 transactionLogRepository.save(transactionLog);
 
                 log.info("Successfully transferred {} points from {} to {}, transaction: {}",
@@ -112,16 +107,13 @@ public class UserPointService {
 
             } catch (Exception e) {
                 log.error("Error during transfer: {}", e.getMessage());
-                // Update transaction status to FAILED
-                updateTransactionStatus(txnId, "FAILED");
+                transactionLog.setStatus("FAILED");
                 throw e;
             }
 
         } finally {
-            // Giải phóng lock theo thứ tự ngược lại
-            redisLockService.tryReleaseLock(lockKey2, txnId + "-2");
-            redisLockService.tryReleaseLock(lockKey1, txnId + "-1");
-
+            redisLockService.unlock(lockKey2, txnId);
+            redisLockService.unlock(lockKey1, txnId);
         }
     }
 
@@ -146,24 +138,15 @@ public class UserPointService {
                 .orElse(false);
     }
 
-    private TransactionLogEntity createTransactionLog(String txnId, Long senderId, Long receiverId,
-                                                      int amount, String status) {
+    private TransactionLogEntity createTransactionLog(String txnId, Long senderId, Long receiverId, int amount) {
         return TransactionLogEntity.builder()
                 .transactionId(txnId)
                 .senderId(senderId)
                 .receiverId(receiverId)
                 .amount(amount)
-                .status(status)
+                .status("PENDING")
                 .createdAt(LocalDateTime.now())
                 .build();
-    }
-
-    private void updateTransactionStatus(String txnId, String status) {
-        transactionLogRepository.findByTransactionId(txnId)
-                .ifPresent(log -> {
-                    log.setStatus(status);
-                    transactionLogRepository.save(log);
-                });
     }
 
 }

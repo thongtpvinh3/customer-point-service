@@ -14,7 +14,7 @@ import java.util.Optional;
 @Repository
 public interface PointRepository extends JpaRepository<PointEntity, Long> {
 
-    PointEntity findByUserId(long userId);
+    Optional<PointEntity> findByUserId(long userId);
 
     @Query("SELECT u FROM PointEntity u WHERE u.userId IN :ids")
     @Lock(LockModeType.PESSIMISTIC_WRITE)

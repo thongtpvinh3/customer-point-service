@@ -20,7 +20,73 @@ public class ModifyPointKafkaConsumer {
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "modifyPointEventRecordConsumerFactory"
     )
-    public void consume(ModifyPointEventRecord<?> record, Acknowledgment ack) {
+    public void consume1(ModifyPointEventRecord<?> record, Acknowledgment ack) {
+
+        if (record == null) {
+            log.warn("Received null record, skip");
+            return;
+        }
+
+        var castedRecord = (ModifyPointEventRecord) record;
+        try {
+            var strategy = modifyPointStrategyProvider.getStrategy(record.getModifyPointEventType());
+            strategy.doModifyPoint(castedRecord);
+            ack.acknowledge();
+        } catch (Exception e) {
+            log.error("Failed to consume point earned event", e);
+        }
+    }
+
+    @KafkaListener(
+            topics = "${service.kafka.modify-point-topic}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "modifyPointEventRecordConsumerFactory"
+    )
+    public void consume2(ModifyPointEventRecord<?> record, Acknowledgment ack) {
+
+        if (record == null) {
+            log.warn("Received null record, skip");
+            return;
+        }
+
+        var castedRecord = (ModifyPointEventRecord) record;
+        try {
+            var strategy = modifyPointStrategyProvider.getStrategy(record.getModifyPointEventType());
+            strategy.doModifyPoint(castedRecord);
+            ack.acknowledge();
+        } catch (Exception e) {
+            log.error("Failed to consume point earned event", e);
+        }
+    }
+
+    @KafkaListener(
+            topics = "${service.kafka.modify-point-topic}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "modifyPointEventRecordConsumerFactory"
+    )
+    public void consume3(ModifyPointEventRecord<?> record, Acknowledgment ack) {
+
+        if (record == null) {
+            log.warn("Received null record, skip");
+            return;
+        }
+
+        var castedRecord = (ModifyPointEventRecord) record;
+        try {
+            var strategy = modifyPointStrategyProvider.getStrategy(record.getModifyPointEventType());
+            strategy.doModifyPoint(castedRecord);
+            ack.acknowledge();
+        } catch (Exception e) {
+            log.error("Failed to consume point earned event", e);
+        }
+    }
+
+    @KafkaListener(
+            topics = "${service.kafka.modify-point-topic}",
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "modifyPointEventRecordConsumerFactory"
+    )
+    public void consume4(ModifyPointEventRecord<?> record, Acknowledgment ack) {
 
         if (record == null) {
             log.warn("Received null record, skip");
