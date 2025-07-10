@@ -74,3 +74,24 @@ Client/Another Service ---event point----->  CustomerPointService ----Tính toá
 
 ## 4. Những lỗi sẽ có thể mắc phải khi lượng giao dịch lớn
 
+
+
+Có một service (customer-point-service) nhận nhiệm vụ lưu trữ điểm của người dùng từ các nguồn của một công ty A
+- Yêu cầu: Thiết kế chức năng chuyển điểm số từ user A sang user B
+- Thiết kế phải đảm bảo yêu cầu sau: Đảm bảo tính nhất quán của các transaction, đảm bảo việc có thể mở rộng
+
+Từ yêu cầu trên, em thiết kế luồng đi của dữ liệu như sau:
+
+1. Ở Client App: User A tiến hành gửi request chuyển N điểm cho User B bằng cách call API /transfer.
+2. Ở API Gateway: Nhận Request và router đến các Service của các hệ thống phục vụ người dùng (Ví dụ như service backend của App)
+3. Ở Service BackEnd của App: Nhận request từ người dùng, bổ sung thêm các thông tin như source, timestamp, metadata, ... và đóng gói thành ModifyPointEventRecord, gửi đến Customer-point-service theo 2 cách:
+    * Sử dụng REST api: /transfer với Request Body là ModifyPointEventRecord
+    * Sử dụng Kafka gửi vào topic "com.thong1.modify-point-topic" với message là ModifyPointEventRecord
+4. Ở Customer-Point-Service: Nhận Request hoặc Message từ Service Backend, và tiến hành chuyển điểm theo flow sau:
+    * Validate xem request hay message đã hợp lệ và đầy đủ thông tin hay chưa
+    * Kiểm tra xem transactionId đã được lưu lại hay chưa, nếu transactionId tồn tại, thì không xử lý request (Tránh client gặp lỗi, gọi nhiều request giống nhau)
+    * Tạo khóa redis cho user A và user B và lưu lại trên Redis với TTL = 5s (Mục đích khóa hai user này lại không cho những transaction khác được thao tác)
+    * Tiến hành nghiệp vụ cộng trừ điểm cho cả 2 user A và B và lưu lại trong Database
+    * Lưu lại log transaction
+    * Xóa khóa trên Redis (Mở khóa cho các transaction khác được quyền thao tác trên 2 user này)
+    * Trả về kết quả cho User nếu sử dụng API và có thể bắn noti cho người dùng nếu sử dụng Kafka
